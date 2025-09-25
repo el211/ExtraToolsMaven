@@ -1,0 +1,11 @@
+name: ExtraTools
+version: '1.0-SNAPSHOT'
+main: fr.elias.extraTools.ExtraTools
+api-version: '1.21'
+description: Extra tools with shaded SmartInvs
+softdepend: [DropEdit, DropInfo, ItemsAdder, WorldGuard]
+commands:
+  customtool:
+    description: "Create custom tools"
+    usage: "/customtool"
+    aliases: [ ct, customt, ctool ]
