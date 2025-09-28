@@ -10,6 +10,7 @@ import fr.elias.extraTools.customs.CustomItem;
 import fr.elias.extraTools.customs.impl.CustomArmor;
 import fr.elias.extraTools.customs.impl.CustomTool;
 import fr.elias.extraTools.customs.impl.CustomWeapon;
+import fr.elias.extraTools.utils.config.Cfgs;
 import fr.elias.extraTools.utils.config.Msgs;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
@@ -131,9 +132,32 @@ public class CustomListener implements Listener {
         }
     }
 
+    // call this just before you break the AOE block
+// One-shot crack flash + sound, then reset a moment later
+    private void flashBreak(Player p, Block b) {
+        try {
+            final org.bukkit.Location loc = b.getLocation();
+
+            // show full crack immediately
+            p.sendBlockDamage(loc, 1.0f);
+
+            // play the block's native break sound
+            var sg = b.getBlockData().getSoundGroup();
+            b.getWorld().playSound(loc, sg.getBreakSound(), 1f, 1f);
+
+            // reset so next flashes still render
+            Bukkit.getScheduler().runTaskLater(ExtraTools.instance(), () -> {
+                try {
+                    // -1f clears the damage indicator for this player
+                    p.sendBlockDamage(loc, -1f);
+                } catch (Throwable ignored) {}
+            }, 2L);
+        } catch (Throwable ignored) {
+            // Non-Paper or older API: silently skip
+        }
+    }
 
 
-    /* ------------------------ Mining: vertical / square ------------------------ */
 
     /* ------------------------ Mining: vertical / square ------------------------ */
     @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
@@ -175,14 +199,19 @@ public class CustomListener implements Listener {
                 if (b.isEmpty() || b.getType().isAir()) continue;
                 if (!canBreakHere(p, b)) continue; // WorldGuard guard
 
-                // ItemsAdder first (still WG-guarded)
-                if (tryBreakItemsAdder(p, b, hand)) {
-                    consumeExtraDurability(hand, tool, 1);
-                    continue;
+                // IA branch (visual flash + break)
+                if (isItemsAdderBlock(b)) {
+                    flashBreak(p, b);
+                    if (tryBreakItemsAdder(p, b, hand)) {
+                        consumeExtraDurability(hand, tool, 1);
+                        continue;
+                    }
+                    // If IA failed for some reason, fall through to vanilla tag check
                 }
 
                 // Then vanilla blocks valid for this tool family
                 if (breakTag != null && breakTag.isTagged(b.getType())) {
+                    flashBreak(p, b);
                     consumeExtraDurability(hand, tool, 1);
                     safeCallDrop(p, hand, b);
                 }
@@ -199,23 +228,28 @@ public class CustomListener implements Listener {
                 if (a == 0 && bOff == 0) continue; // center handled by vanilla
 
                 Block target = switch (face) {
-                    case UP, DOWN    -> center.getRelative(a, 0, bOff);
-                    case NORTH, SOUTH-> center.getRelative(a, bOff, 0);
-                    case EAST, WEST  -> center.getRelative(0, bOff, a);
-                    default          -> center.getRelative(a, 0, bOff);
+                    case UP, DOWN     -> center.getRelative(a, 0, bOff);
+                    case NORTH, SOUTH -> center.getRelative(a, bOff, 0);
+                    case EAST, WEST   -> center.getRelative(0, bOff, a);
+                    default           -> center.getRelative(a, 0, bOff);
                 };
 
                 if (target.isEmpty() || target.getType().isAir()) continue;
                 if (!canBreakHere(p, target)) continue; // WorldGuard guard
 
-                // ItemsAdder first (still WG-guarded)
-                if (tryBreakItemsAdder(p, target, hand)) {
-                    consumeExtraDurability(hand, tool, 1);
-                    continue;
+                // IA branch (visual flash + break)
+                if (isItemsAdderBlock(target)) {
+                    flashBreak(p, target);
+                    if (tryBreakItemsAdder(p, target, hand)) {
+                        consumeExtraDurability(hand, tool, 1);
+                        continue;
+                    }
+                    // If IA failed for some reason, fall through to vanilla tag check
                 }
 
                 // Then vanilla blocks valid for this tool family
                 if (breakTag != null && breakTag.isTagged(target.getType())) {
+                    flashBreak(p, target);
                     consumeExtraDurability(hand, tool, 1);
                     safeCallDrop(p, hand, target);
                 }
@@ -500,6 +534,8 @@ public class CustomListener implements Listener {
 
     @EventHandler
     public void onDrop(BlockDropItemEvent event) {
-        plugin.getLogger().info("ON drop");
+        if (!Cfgs.of().get("debug.logBlockDrops", false)) return; // default off
+        plugin.getLogger().info("[debug] drop: " + event.getBlockState().getType());
     }
+
 }
